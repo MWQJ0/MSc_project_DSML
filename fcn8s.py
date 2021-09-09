@@ -28,7 +28,7 @@ class Bilinear(nn.Module):
 
     def __init__(self, factor, num_channels):
         super().__init__()
-        self.factor = factor 
+        self.factor = factor #how much to downsample the image 
         filter = get_upsample_filter(factor * 2)
         w = torch.zeros(num_channels, num_channels, factor * 2, factor * 2)
         for i in range(num_channels):
@@ -63,16 +63,17 @@ class VGG16_FCN8s(nn.Module):
 
 
 
+
     transform1 = torchvision.transforms.Compose([
         torchvision.transforms.ToTensor(),
         torchvision.transforms.Normalize(
             mean=[0.485, 0.456, 0.406],
             std=[0.229, 0.224, 0.225]),
-        ]) 
-        
+        ])
 
         
     
+    #transform2 maps the images to [-1,1] as MUNIT is trained in this range 
     transform2 = torchvision.transforms.Compose([
         torchvision.transforms.ToTensor(),
         torchvision.transforms.Normalize(
@@ -89,30 +90,32 @@ class VGG16_FCN8s(nn.Module):
         super().__init__()
         self.output_last_ft = output_last_ft
         self.vgg = make_layers(vgg.cfgs['D']) #cnn apo to vgg  #cfg itan prin
-        self.vgg_head = nn.Sequential( 
+        self.vgg_head = nn.Sequential( #extra convolutional layers added to the VGG net
             nn.Conv2d(512, 4096, 7),
             nn.ReLU(inplace=True),
             nn.Dropout2d(p=0.5),
             nn.Conv2d(4096, 4096, 1),
             nn.ReLU(inplace=True),
             nn.Dropout2d(p=0.5),
-            nn.Conv2d(4096, num_cls, 1) #extra regularisation, 4094 channels 
-            ) 
-       
+            nn.Conv2d(4096, num_cls, 1) #extra regularisation, last layer, 4094 channels 
+            ) #4096 channels are finally mapped to the total number of classes
 
-         
-        self.upscore2 = self.upscore_pool4 = Bilinear(2, num_cls) 
+      
+
+        #upsampling to the output of vgg
+           
+        self.upscore2 = self.upscore_pool4 = Bilinear(2, num_cls) #upsampling to the output of vgg_head 
         self.upscore8 = Bilinear(8, num_cls)
         self.score_pool4 = nn.Conv2d(512, num_cls, 1) #input 512 channels
-      
+        #pairnei to output tou self.vgg 
         for param in self.score_pool4.parameters():
-            init.constant_(param, 0) 
+            init.constant_(param, 0) #upsampling from multiple levels
         self.score_pool3 = nn.Conv2d(256, num_cls, 1)
         for param in self.score_pool3.parameters():
-            init.constant_(param, 0) 
+            init.constant_(param, 0) #concatenate so as not to loose much spatial info
         
         if pretrained:
-            if weights_init is not None:
+            if weights_init is not None: 
                 self.load_weights(torch.load(weights_init))
             else:
                 self.load_base_weights()
