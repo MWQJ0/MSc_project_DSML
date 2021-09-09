@@ -10,7 +10,8 @@ from utils_MUNIT import * #added this
 
 sys.path.append("../..")  # Adds higher directory to python modules path.
 sys.path.append("..")  # Adds higher directory to python modules path.
-sys.path.append('/content/gdrive/MyDrive/segmentation') 
+#sys.path.append('/content/gdrive/MyDrive/segmentation')
+sys.path.append('/cluster/project9/MUNIT/segmentation_kyveli/segmentation') 
 
 
 import click #creates command line interface 
@@ -19,6 +20,8 @@ import torch
 import torch.nn.functional as F
 import torchvision
 from tensorboardX import SummaryWriter #enables to import the tensorboard class
+
+from PIL import Image
 
 from data.data_loader import get_fcn_dataset as get_dataset 
 from models import get_model
@@ -39,12 +42,13 @@ def supervised_loss(score, label, weights=None): #cross entropy loss
     loss = loss_fn_(F.log_softmax(score), label) #obtain log-probabilities by adding a log softmax layer in the last layer of the network
     #use CrossEntropyLoss instead if we prefer not to add an extra layer 
     
-   
+    
     return loss
  
 
 @click.command()
 @click.option('--outdir', default='.', type=str)
+@click.option('--logdir', default='.', type=str)
 @click.option('--dataset', required=True, multiple=True)
 @click.option('--datadir', default="", type=click.Path(exists=True))
 @click.option('--batch_size', '-b', default=1)
@@ -55,29 +59,35 @@ def supervised_loss(score, label, weights=None): #cross entropy loss
 @click.option('--momentum', '-m', default=0.9)
 @click.option('--snapshot', '-s', default=5000)
 @click.option('--downscale', type=int)
-@click.option('--augmentation/--no-augmentation', default= False) 
+@click.option('--augmentation/--no-augmentation', default= True) #default was True 
 @click.option('--fyu/--torch', default=False)
 @click.option('--crop_size', default=720)
 @click.option('--weights', type=click.Path(exists=True))
 @click.option('--model', default='fcn8s')
 @click.option('--num_cls', default=19, type=int)
 @click.option('--gpu', default='0')
-
+@click.option('--config_path', default='')
 
 def main(outdir, dataset, datadir, batch_size, lr, p_synthetic, step, iterations,
         momentum, snapshot, downscale, augmentation, fyu, crop_size, 
-        weights, model, gpu, num_cls):
+        weights, model, gpu, num_cls,config_path,logdir):
 
-  os.makedirs(outdir.split('/')[0] + '/' + outdir.split('/')[1], exist_ok=True) #recursive directory creation function
+ 
+  res_path = '/'.join(outdir.split('/')[0:-1])
+  if not os.path.exists(res_path):
+      os.makedirs(res_path)
+  print("output dir", res_path)
 
   if weights is not None:
       raise RuntimeError("weights don't work because eric is bad at coding")
   config_logging()
-  
-  logdir = 'runs/{:s}/{:s}'.format(model, '-'.join(dataset)) #runs/fcn8s/cityscapes
+  if not os.path.exists(logdir):
+      os.makedirs(logdir)
+ 
+
   writer = SummaryWriter(log_dir=logdir)
   net = get_model(model, num_cls=num_cls) 
-  
+  #print("net",net) #prints architecture of vgg16 and vgg_head and bilinear upsampling
   net.cuda()
   transform1=[] 
   transform2=[] 
@@ -88,18 +98,18 @@ def main(outdir, dataset, datadir, batch_size, lr, p_synthetic, step, iterations
   
                                  
   transform1.extend([
-      torchvision.transforms.Resize((512 // downscale,)), #was 1024
+      torchvision.transforms.Scale((512 // downscale)), #was 1024
       net.transform1
       ])
   
   transform2.extend([
-      torchvision.transforms.Resize((512 // downscale,)), #was 1024
+      torchvision.transforms.Scale((512 // downscale)), #was 1024
       net.transform2 
       ]) 
 
   
   target_transform.extend([
-      torchvision.transforms.Resize((512 // downscale,), interpolation=Image.NEAREST), #was 1024 and changed it to 512
+      torchvision.transforms.Scale((512 // downscale), interpolation=Image.NEAREST), #was 1024 and changed it to 512
       to_tensor_raw
       ])
 
@@ -134,10 +144,13 @@ def main(outdir, dataset, datadir, batch_size, lr, p_synthetic, step, iterations
                                           shuffle=True, num_workers=2,
                                           collate_fn= collate_fn, 
                                           pin_memory=True)
-   
+                                          
+
+ 
+
   #LOAD CHECKPOINTS
   from trainer_MUNIT import MUNIT_Trainer
-  hyperparameters= get_config('gta2cityscapes_folder_MUNIT.yaml')
+  hyperparameters= get_config(config_path)
 
   class Opts:
     pass
@@ -145,7 +158,8 @@ def main(outdir, dataset, datadir, batch_size, lr, p_synthetic, step, iterations
   opts.gpu_ids= [0]
 
   trainer= MUNIT_Trainer(hyperparameters, opts)
-  trainer.resume('../segmentation/check', hyperparameters)
+  trainer.resume('/cluster/project9/MUNIT/segmentation_kyveli/segmentation/check', hyperparameters)
+  #trainer.resume('../segmentation/check', hyperparameters)
   trainer.eval() #eval mode to save memory (from weights and activations)
   
 
@@ -154,22 +168,25 @@ def main(outdir, dataset, datadir, batch_size, lr, p_synthetic, step, iterations
   test_tr= test.numpy().transpose([1,2,0])  #(512, 1024, 3)
   test_tr_rgb= (test_tr +1) * 0.5 *255 #bring it to [0,255]
   test_tr_color = np.asarray(test_tr_rgb, np.uint8)
- 
+  plt.figure()
+  plt.imshow(test_tr_color)
+  plt.savefig("test.png") 
   
 
   #PRODUCE A SYNTHETIC IMAGE
   content_code_real, _=trainer.gen_b.encode(loader.dataset[0][1].unsqueeze(0)) 
-  #torch.Size([1, 256, 128, 256]) 
+  #torch.Size([1, 256, 128, 256]) dimension of downsampled image
 
 
   style_encoder= trainer.gen_b.enc_style(loader.dataset[0][1].unsqueeze(0)) #[-1,1]
   #torch.Size([1, 8, 1, 1])
 
-  display_size= batch_size #na simfwnei me batch size 
+  display_size= batch_size
   style_dim=8
-  styles_real= torch.randn(display_size,style_dim, 1, 1) 
-  #styles_real= np.sqrt(10)*torch.randn(display_size,style_dim, 1, 1) 
-  #styles_real= np.sqrt(500)*torch.randn(display_size,style_dim, 1, 1) 
+  
+  styles_real=Variable(torch.randn(display_size,style_dim, 1, 1))
+  #styles_real=Variable(np.sqrt(500)* torch.randn(display_size,style_dim, 1, 1)) 
+  #styles_real=Variable(np.sqrt(10)*torch.randn(display_size,style_dim, 1, 1)) 
   
   
   
@@ -179,14 +196,16 @@ def main(outdir, dataset, datadir, batch_size, lr, p_synthetic, step, iterations
   synthetic_sq_tr= synthetic_sq_cpu.detach().numpy().transpose([1,2,0])
   synthetic_sq_tr_rgb= (synthetic_sq_tr +1) * 0.5 *255
   synthetic_color = np.asarray(synthetic_sq_tr_rgb, np.uint8)
- 
+  plt.figure()
+  plt.imshow(synthetic_color)
+  plt.savefig("synthetic_test.png")
   
   
 
   iteration = 0
   counter=0 #how many times synthetic image is constructed during training 
   losses = deque(maxlen=10)
-
+  flag=True
   while True:
     
       for im1, im2, label in loader: 
@@ -198,29 +217,36 @@ def main(outdir, dataset, datadir, batch_size, lr, p_synthetic, step, iterations
           # Clear out gradients
           opt.zero_grad()
 
-          
-       
+        
+      
           if (generate_prob < p_synthetic):
             counter +=1 
 
             
- 
-            styles_real_random= torch.randn(display_size,style_dim, 1, 1) 
+          
+            #styles_real=Variable(np.sqrt(500)* torch.randn(display_size,style_dim, 1, 1))
+            #styles_real= Variable(np.sqrt(10)*torch.randn(display_size,style_dim, 1, 1))
+            styles_real=Variable(torch.randn(display_size,style_dim, 1, 1)) 
+        
             content_code_real,_= trainer.gen_b.encode(im2) #takes the current image from the dataloader
             synthetic_im2=trainer.gen_b.decode(content_code_real, styles_real)
             label_im2= label
 
-        
+            
+
+            #VISUALIZATION
             synthetic_im2_sq= synthetic_im2.squeeze(0)
             synthetic_im2_cpu=synthetic_im2_sq.cpu()
             synthetic_im2_tr= synthetic_im2_cpu.detach().numpy().transpose([1,2,0])
             synthetic_im2_tr_rgb= (synthetic_im2_tr +1) * 0.5 *255
             synthetic_im2_color = np.asarray(synthetic_im2_tr_rgb, np.uint8)
-            
+            plt.figure()
+            plt.imshow(synthetic_im2_color)
+            plt.savefig("synthetic_im2.png")
   
-            
+           
   
-            im2 = make_variable(synthetic_im2,requires_grad=False) #check this, maybe we need the im1
+            im2 = make_variable(synthetic_im2,requires_grad=False) 
             label = make_variable(label_im2, requires_grad=False) 
             
           else:
@@ -228,6 +254,7 @@ def main(outdir, dataset, datadir, batch_size, lr, p_synthetic, step, iterations
             label = make_variable(label, requires_grad=False)
 
          
+
           # forward pass and compute loss
           preds = net(im2) 
           loss = supervised_loss(preds, label)
@@ -240,7 +267,7 @@ def main(outdir, dataset, datadir, batch_size, lr, p_synthetic, step, iterations
 
           losses.append(loss.item()) 
 
-         
+ 
 
           # log results
           if iteration % 10 == 0:
@@ -258,9 +285,10 @@ def main(outdir, dataset, datadir, batch_size, lr, p_synthetic, step, iterations
               print("counter",counter)
               break
 
-      if iteration >= iteration:
+      if iteration >= iterations:
+          flag= False
+          print("flag",flag)
           break
-
 
         
          
