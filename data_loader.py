@@ -36,7 +36,7 @@ def get_transform_dataset(dataset_name, rootdir, net_transform, downscale):
     user_paths = os.environ['PYTHONPATH'].split(os.pathsep)
     transform, target_transform = get_transform2(dataset_name, net_transform, downscale)
     return get_fcn_dataset(dataset_name, rootdir, transform=transform,
-            target_transform=target_transform) #was before 
+            target_transform=target_transform) 
    
 
 sizes = {'cityscapes': 1024, 'gta5': 1024, 'cyclegta5': 1024}
@@ -50,9 +50,8 @@ def get_orig_size(dataset_name):
 def get_transform2(dataset_name, net_transform, downscale):
     "Returns image and label transform to downscale, crop and prepare for net."
     orig_size = get_orig_size(dataset_name)
-    transform = [] #was before 
-    #transform1=[] #added this
-    #transform2=[] #and this
+    transform = []  
+   
     target_transform = []
     if downscale is not None:
         transform.append(transforms.Resize(orig_size // downscale)) 
@@ -91,12 +90,10 @@ def get_transform(params, image_size, num_channels):
     if not num_channels == params.num_channels:
         if num_channels == 1:
             transform.append(RGB2Gray) 
-            #transform1.append(RGB2Gray) 
-            #transform2.append(RGB2Gray) 
+           
         elif num_channels == 3:
             transform.append(Gray2RGB) 
-            #transform1.append(Gray2RGB)
-            #transform2.append(Gray2RGB)
+           
         else:
             print('NumChannels should be 1 or 3', num_channels)
             raise Exception
