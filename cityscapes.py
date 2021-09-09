@@ -1,12 +1,22 @@
 import os.path
-import sys 
+import sys
+
+import matplotlib
+matplotlib.use('agg')
 import matplotlib.pyplot as plt
+plt.ioff()
+
+
+ 
+
 import torchvision
 from torchvision import transforms 
 
 import numpy as np
 import torch.utils.data as data
 from PIL import Image
+from PIL import ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 from .data_loader import register_data_params, register_dataset_obj
 from .data_loader import DatasetParams
@@ -29,7 +39,7 @@ classes = ['road', 'sidewalk', 'building', 'wall', 'fence', 'pole', 'traffic lig
 
 
 
-def remap_labels_to_train_ids(arr): #krataw ta 18 prwta noumera (exw 19 klaseis)
+def remap_labels_to_train_ids(arr): 
     out = ignore_label * np.ones(arr.shape, dtype=np.uint8)
     for id, label in id2label.items():
         out[arr == id] = int(label)
@@ -47,7 +57,7 @@ class CityScapesParams(DatasetParams):
 
 @register_dataset_obj('cityscapes')
 class Cityscapes(data.Dataset):
-  #root: /content/gdrive/MyDrive/cityscapes
+
 
     def __init__(self, root, split= 'train',remap_labels=True, transform=(None, None),
                  target_transform=None): 
@@ -69,27 +79,14 @@ class Cityscapes(data.Dataset):
 
     def collect_ids(self): 
       
-        #root: /content/gdrive/MyDrive/cityscapes
-        
         im_dir = os.path.join(self.root, 'leftImg8bit', self.split) 
       
-        
-        
-        
         
         ids = []
         
 
         for dirpath, dirnames, filenames in os.walk(im_dir): #os.walk returns a generator, that creates 
-        #a tuple of values (current_path, directories in current_path, files in current_path)
-        #every time the generator is called it will follow each directory recursively until no further
-        #sub-directories are available from the initial directory that walk was called upon 
-      
         #os.walk: parameters: top - each directory rooted at directory, yields 3-tuples (dirpath, dirnames, filenames)
-        
-        #dirpath is the path to the directory
-        #dirnames is a list of the names of the subdirectories in dirpath excluding '.' and '..'
-          
           for filename in filenames:
             if filename.endswith('.png'):
               
@@ -99,11 +96,11 @@ class Cityscapes(data.Dataset):
 
 
 
-    def img_path(self, id): #an dwsw ws dataroot to cityscapes folder
-        fmt = 'leftImg8bit/{}/{}/{}_leftImg8bit.png' 
+    def img_path(self, id): 
+        fmt = 'leftImg8bit/{}/{}/{}_leftImg8bit.png'  
         subdir = id.split('_')[0] 
         path = fmt.format(self.split, subdir, id) 
-        return os.path.join(self.root, path) 
+        return os.path.join(self.root, path)
       
 
     def label_path(self, id):
@@ -113,56 +110,50 @@ class Cityscapes(data.Dataset):
         return os.path.join(self.root, path)
 
 
-  
     
-    def __getitem__(self, index):
+    #__getitem__ function loads and returns a sample from the dataset at the given index 
+    #returns the tensor image and corresponding label in a tuple.
+    def __getitem__(self, index): 
         
         id = self.ids[index]
         
         img = Image.open(self.img_path(id)).convert('RGB') 
-        plt.imshow(img)
-        plt.savefig('cityscapes_get_item_img.png')
-
-      
+    
       
         if self.transform1 is not None: 
-            img1 = self.transform1(img) 
+            img1 = self.transform1(img) #normalisation with real mean value and standard deviation 
             
         mean = [0.485, 0.456, 0.406]
         std = [0.229, 0.224, 0.225]
         img1_after_transf= img1.clone()
         img1_after_transf= img1_after_transf.numpy().transpose([1,2,0]) * std + mean  #(512, 1024, 3)
-        plt.figure()
-        plt.imshow(img1_after_transf)
-        plt.savefig('cityscapes_get_item_after_transf_img1.png')
- 
+     
         
         if self.transform2 is not None: 
-            img2 = self.transform2(img)
+            img2 = self.transform2(img) #[-1,1]
         mean2= [0.5, 0.5, 0.5]
         std2= [0.5, 0.5, 0.5]
         img2_after_transf= img2.clone()
         img2_after_transf= img2_after_transf.numpy().transpose([1,2,0]) * std2 + mean2
-        plt.figure()
-        plt.imshow(img2_after_transf)
-        plt.savefig('cityscapes_get_item_after_transf_img2.png')
+      
  
 
       
-        
+
         target = Image.open(self.label_path(id)).convert('L') 
         if self.remap_labels:
-            target = np.asarray(target) 
+            target = np.asarray(target)
             target = remap_labels_to_train_ids(target) 
             target = Image.fromarray(np.uint8(target), 'L') 
         if self.target_transform is not None:
             target = self.target_transform(target)
         
         return img1, img2, target
-        #img1: image from the 1st transformation
+        
+	#img1: image from the 1st transformation
         #img2: image from the 2nd transformation
         #target: label 
-        
+     
         
 
     def __len__(self):
